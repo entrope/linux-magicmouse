@@ -210,7 +210,7 @@ void read_socket(int fd, const char name[])
                 static const char btns[] = " LRB";
                 fprintf(stdout, "touch: x=%+3d y=%+3d (T=%10d%c)",
                         (char)data[2], (char)data[3],
-                        data[4] | (data[5] << 8) | (data[6] << 16),
+                        (data[4] | (data[5] << 8) | (data[6] << 16)) >> 2,
                         btns[data[4] & 3]);
                 for (ii = 0; ii < ntouches; ii++) {
                         /* On my mouse, X ranges from about -1100
@@ -219,21 +219,19 @@ void read_socket(int fd, const char name[])
                          * mouse).  Angle 0 is from the left, angle
                          * 128 is from the logo to the nose, angle 255
                          * is from the right.
-                         *
-                         * The major and minor axis lengths appear to
-                         * have different scales, with two bits of
-                         * state information with unknown meaning.
                          */
-                        int x_y = (data[ii*8+7] << 8) | (data[ii*8+8] << 16) | (data[ii*8+9] << 24);
-                        fprintf(stdout, " (X=%+05d Y=%+05d Size=%3d minor?=%3d ?=%d major?=%2d angle=%03d, state=%02x)",
+                        unsigned char *td = data + ii * 8 + 7;
+                        int x_y = td[0] << 8 | td[1] << 16 | td[2] << 24;
+                        int misc = td[5] << 0 | td[6] << 8;
+                        fprintf(stdout, " (ID=%d X=%+05d Y=%+05d major=%3d minor=%3d size=%2d angle=%02d state=%02x)",
+                                (misc >> 6) & 15,
                                 (x_y << 12) >> 20,
                                 (x_y <<  0) >> 20,
-                                data[ii * 8 + 10],
-                                data[ii * 8 + 11],
-                                data[ii * 8 + 12] >> 6,
-                                data[ii * 8 + 12] & 63,
-                                data[ii * 8 + 13],
-                                data[ii * 8 + 14]);
+                                td[3],
+                                td[4],
+                                (misc >>  0) & 63,
+                                (misc >> 10) & 63,
+                                td[7]);
                 }
                 fprintf(stdout, "\n");
         } else {
