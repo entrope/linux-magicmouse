@@ -208,9 +208,9 @@ void read_socket(int fd, const char name[])
         } else if (data[0] == 0xa1 && data[1] == 0x29 && ((res - 7) % 8 == 0)) {
                 int ntouches = (res - 5) / 8;
                 static const char btns[] = " LRB";
-                fprintf(stdout, "touch: x=%+3d y=%+3d (T=%10d%c)",
+                fprintf(stdout, "touch: x=%+3d y=%+3d (T=%6d%c)",
                         (char)data[2], (char)data[3],
-                        (data[4] | (data[5] << 8) | (data[6] << 16)) >> 2,
+                        (data[4] | (data[5] << 8) | (data[6] << 16)) >> 6,
                         btns[data[4] & 3]);
                 for (ii = 0; ii < ntouches; ii++) {
                         /* On my mouse, X ranges from about -1100

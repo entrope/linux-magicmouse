@@ -1,3 +1,7 @@
 hid-parse
 mtalk
 usb-bt-dump
+Module.markers
+Module.symvers
+.*.o.cmd
+.*.o.d
