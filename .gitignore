@@ -3,5 +3,9 @@ mtalk
 usb-bt-dump
 Module.markers
 Module.symvers
+.tmp_versions/
+.*.ko.cmd
 .*.o.cmd
 .*.o.d
+*.mod.c
+*.ko
