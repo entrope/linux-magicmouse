@@ -1,0 +1,124 @@
+From b191938d6486ae6b2f879c7cfdb056d9d093fd6b Mon Sep 17 00:00:00 2001
+From: Michael Poole <mdpoole@troilus.org>
+Date: Sun, 24 Jan 2010 22:34:21 -0500
+Subject: [RFC PATCH 2/3] Add a hid_ll_driver.hid_set_report() function.
+
+This allows a HID device driver to send a Set_Report(Output) or
+Set_Report(Feature) message to its device.
+
+Signed-off-by: Michael Poole <mdpoole@troilus.org>
+---
+ drivers/hid/usbhid/hid-core.c |   23 +++++++++++++++++++++++
+ include/linux/hid.h           |    4 ++++
+ net/bluetooth/hidp/core.c     |   25 +++++++++++++++++++++++++
+ 3 files changed, 52 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/hid/usbhid/hid-core.c b/drivers/hid/usbhid/hid-core.c
+index ae516a4..c2158ff 100644
+--- a/drivers/hid/usbhid/hid-core.c
++++ b/drivers/hid/usbhid/hid-core.c
+@@ -1067,6 +1067,28 @@ static int usbhid_power(struct hid_device *hid, int lvl)
+ 	return r;
+ }
+ 
++static int usbhid_set_report(struct hid_device *hid, int type,
++	__u8 *buf, int count)
++{
++	struct usb_device *dev = hid_to_usb_dev(hid);
++	struct usbhid_device *usbhid = hid->driver_data;
++	struct usb_interface *intf = usbhid->intf;
++	struct usb_host_interface *interface = intf->cur_altsetting;
++	int ret;
++
++	ret = usb_control_msg(dev, usb_sndctrlpipe(dev, 0),
++		HID_REQ_SET_REPORT,
++		USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
++		((type + 1) << 8) | *buf,
++		interface->desc.bInterfaceNumber, buf + 1, count - 1,
++		USB_CTRL_SET_TIMEOUT);
++
++	if (ret > 0)
++		ret++;
++
++	return ret;
++}
++
+ static struct hid_ll_driver usb_hid_driver = {
+ 	.parse = usbhid_parse,
+ 	.start = usbhid_start,
+@@ -1075,6 +1097,7 @@ static struct hid_ll_driver usb_hid_driver = {
+ 	.close = usbhid_close,
+ 	.power = usbhid_power,
+ 	.hidinput_input_event = usb_hidinput_input_event,
++	.hid_set_report = usbhid_set_report,
+ };
+ 
+ static int usbhid_probe(struct usb_interface *intf, const struct usb_device_id *id)
+diff --git a/include/linux/hid.h b/include/linux/hid.h
+index c22d8aa..980e7cc 100644
+--- a/include/linux/hid.h
++++ b/include/linux/hid.h
+@@ -642,6 +642,7 @@ struct hid_driver {
+  * @hidinput_input_event: event input event (e.g. ff or leds)
+  * @parse: this method is called only once to parse the device data,
+  *	   shouldn't allocate anything to not leak memory
++ * @hid_set_report: sends a SET_REPORT request to the device
+  */
+ struct hid_ll_driver {
+ 	int (*start)(struct hid_device *hdev);
+@@ -656,6 +657,9 @@ struct hid_ll_driver {
+ 			unsigned int code, int value);
+ 
+ 	int (*parse)(struct hid_device *hdev);
++
++	int (*hid_set_report) (struct hid_device *hdev, int type,
++			__u8 *buf, int count);
+ };
+ 
+ #define	PM_HINT_FULLON	1<<5
+diff --git a/net/bluetooth/hidp/core.c b/net/bluetooth/hidp/core.c
+index 18e7f5a..dde4c60 100644
+--- a/net/bluetooth/hidp/core.c
++++ b/net/bluetooth/hidp/core.c
+@@ -752,6 +752,30 @@ static void hidp_stop(struct hid_device *hid)
+ 	hid->claimed = 0;
+ }
+ 
++static int hidp_set_report(struct hid_device *hid, int type,
++	__u8 *data, int size)
++{
++	struct hidp_session *session = hid->driver_data;
++	struct sk_buff *skb;
++
++	BT_DBG("session %p hid %p data %p size %d", session, hid, data, size);
++
++	if (!(skb = alloc_skb(size + 1, GFP_ATOMIC))) {
++		BT_ERR("Can't allocate memory for new frame");
++		return -ENOMEM;
++	}
++
++	*skb_put(skb, 1) = 0xa0 | (type + 1);
++	if (size > 0)
++		memcpy(skb_put(skb, size), data, size);
++
++	skb_queue_tail(&session->ctrl_transmit, skb);
++
++	hidp_schedule(session);
++
++	return 0;
++}
++
+ static struct hid_ll_driver hidp_hid_driver = {
+ 	.parse = hidp_parse,
+ 	.start = hidp_start,
+@@ -759,6 +783,7 @@ static struct hid_ll_driver hidp_hid_driver = {
+ 	.open  = hidp_open,
+ 	.close = hidp_close,
+ 	.hidinput_input_event = hidp_hidinput_event,
++	.hid_set_report = hidp_set_report,
+ };
+ 
+ static int hidp_setup_hid(struct hidp_session *session,
+-- 
+1.6.5.6
+

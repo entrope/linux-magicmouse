@@ -1,5 +1,5 @@
 /*
- *   Apple "Magic" Wireless Mouse drivers
+ *   Apple "Magic" Wireless Mouse driver
  *
  *   Copyright (c) 2010 Michael Poole <mdpoole@troilus.org>
  */
@@ -16,7 +16,7 @@
 #include <linux/module.h>
 #include <linux/usb.h>
 
-#if defined(CONFIG_MAGICMOUSE)
+#if defined(CONFIG_HID_MAGICMOUSE)
 /* This looks like an in-tree build. */
 # include "hid-ids.h"
 #else
@@ -60,21 +60,49 @@ struct magicmouse_sc {
 	int last_timestamp;
 	int delta_time;
 	int ntouches;
+	int scroll_accel;
+	unsigned long scroll_jiffies;
 
 	struct {
 		short x;
 		short y;
 		short scroll_y;
+		u8 size;
 	} touches[16];
 	int tracking_ids[16];
 };
 
+static int magicmouse_firm_touch(struct magicmouse_sc *msc)
+{
+	int touch = -1;
+	int ii;
+
+	/* If there is only one "firm" touch, set touch to its
+	 * tracking ID.
+	 */
+	for (ii = 0; ii < msc->ntouches; ii++) {
+		int idx = msc->tracking_ids[ii];
+		if (msc->touches[idx].size < 8) {
+			/* Ignore this touch. */
+		} else if (touch >= 0) {
+			touch = -1;
+			break;
+		} else {
+			touch = idx;
+		}
+	}
+
+	return touch;
+}
+
 static void magicmouse_emit_buttons(struct magicmouse_sc *msc, u8 state)
 {
 	if (emulate_3button) {
+		int id;
+
 		/* If some button was pressed before, keep it held
-		 * down.  Otherwise, if there's only one touch, use
-		 * that to override the mouse's guess.
+		 * down.  Otherwise, if there's exactly one firm
+		 * touch, use that to override the mouse's guess.
 		 */
 		if (!state) {
 			/* The button was released. */
@@ -84,8 +112,7 @@ static void magicmouse_emit_buttons(struct magicmouse_sc *msc, u8 state)
 			state = test_bit(BTN_LEFT, msc->input->key) |
 				test_bit(BTN_RIGHT, msc->input->key) << 1 |
 				test_bit(BTN_MIDDLE, msc->input->key) << 2;
-		} else if (msc->ntouches == 1) {
-			int id = msc->tracking_ids[0];
+		} else if ((id = magicmouse_firm_touch(msc)) >= 0) {
 			int x = msc->touches[id].x;
 			if (x < middle_button_start)
 				state = 1;
@@ -100,6 +127,10 @@ static void magicmouse_emit_buttons(struct magicmouse_sc *msc, u8 state)
 
 	input_report_key(msc->input, BTN_LEFT, state & 1);
 	input_report_key(msc->input, BTN_RIGHT, state & 2);
+
+	if (state != 0) {
+		msc->scroll_accel = 0;
+	}
 }
 
 static void magicmouse_emit_touch(struct magicmouse_sc *msc, int raw_id, u8 *tdata)
@@ -119,12 +150,23 @@ static void magicmouse_emit_touch(struct magicmouse_sc *msc, int raw_id, u8 *tda
 	 */
 	if (emulate_scroll_wheel && y < 0 &&
 	    middle_button_start < x && x < middle_button_stop) {
-		int step = (msc->touches[id].scroll_y - y) / 128;
+		unsigned long now = jiffies;
+		int step = msc->touches[id].scroll_y - y;
 
+		/* Reset acceleration after half a second. */
+		if (time_after(now, msc->scroll_jiffies + HZ / 2)) {
+			msc->scroll_accel = 0;
+		}
+
+		/* Calculate and apply the scroll motion. */
+		step = step >> (7 - msc->scroll_accel);
 		if ((tdata[7] & 0xf0) != 0x40) {
 			msc->touches[id].scroll_y = y;
+			if (++msc->scroll_accel > 7)
+                                msc->scroll_accel = 0;
 		} else if (step != 0) {
 			msc->touches[id].scroll_y = y;
+			msc->scroll_jiffies = now;
 			input_report_rel(input, REL_WHEEL, step);
 		}
 	}
@@ -132,6 +174,7 @@ static void magicmouse_emit_touch(struct magicmouse_sc *msc, int raw_id, u8 *tda
 	/* Stash the coordinates that we might use later. */
 	msc->touches[id].x = x;
 	msc->touches[id].y = y;
+	msc->touches[id].size = misc & 63;
 
 	/* Generate the input events for this touch. */
 	if (report_touches) {
@@ -141,11 +184,12 @@ static void magicmouse_emit_touch(struct magicmouse_sc *msc, int raw_id, u8 *tda
 		input_report_abs(input, ABS_MT_ORIENTATION, (int)(misc >> 10) - 32);
 		input_report_abs(input, ABS_MT_POSITION_X, x);
 		input_report_abs(input, ABS_MT_POSITION_Y, y);
-		input_mt_sync(input);
-	}
 
-	if (report_undeciphered) {
-		input_event(input, EV_MSC, MSC_RAW, tdata[7]);
+		if (report_undeciphered) {
+			input_event(input, EV_MSC, MSC_RAW, tdata[7]);
+		}
+
+		input_mt_sync(input);
 	}
 }
 
@@ -154,18 +198,19 @@ static int magicmouse_raw_event(struct hid_device *hdev,
 {
 	struct magicmouse_sc *msc = hid_get_drvdata(hdev);
 	struct input_dev *input = msc->input;
+	short x, y;
 	int ts;
 	int ii;
+	u8 clicks;
 
 	switch (data[0]) {
 	case 0x10:
 		if (size != 6)
 			return 0;
-		magicmouse_emit_buttons(msc, data[1] & 3);
-		input_report_rel(input, REL_X, (short)(data[2] | data[3] << 8));
-		input_report_rel(input, REL_Y, (short)(data[4] | data[5] << 8));
-		input_sync(input);
-		return 1;
+		x = (short)(data[2] | data[3] << 8);
+		y = (short)(data[4] | data[5] << 8);
+		clicks = data[1];
+		break;
 	case 0x29:
 		/* Expect six bytes of prefix, and N*8 bytes of touch data. */
 		if (size < 6 || ((size - 6) % 8) != 0)
@@ -180,11 +225,10 @@ static int magicmouse_raw_event(struct hid_device *hdev,
 		 * to have the current touch information before
 		 * generating a click event.
 		 */
-		magicmouse_emit_buttons(msc, data[3] & 3);
-		input_report_rel(input, REL_X, (signed char)data[1]);
-		input_report_rel(input, REL_Y, (signed char)data[2]);
-		input_sync(input);
-		return 1;
+		x = (signed char)data[1];
+		y = (signed char)data[2];
+		clicks = data[3];
+		break;
 	case 0x20: /* Theoretically battery status (0-100), but I have
 		    * never seen it -- maybe it is only upon request.
 		    */
@@ -195,6 +239,12 @@ static int magicmouse_raw_event(struct hid_device *hdev,
 	default:
 		return 0;
 	}
+
+	magicmouse_emit_buttons(msc, clicks & 3);
+	input_report_rel(input, REL_X, x);
+	input_report_rel(input, REL_Y, y);
+	input_sync(input);
+	return 1;
 }
 
 static int magicmouse_input_open(struct input_dev *dev)
