@@ -16,13 +16,7 @@
 #include <linux/module.h>
 #include <linux/usb.h>
 
-#if defined(CONFIG_HID_MAGICMOUSE)
-/* This looks like an in-tree build. */
-# include "hid-ids.h"
-#else
-# define USB_VENDOR_ID_APPLE		0x05ac
-# define USB_DEVICE_ID_APPLE_MAGICMOUSE	0x030d
-#endif
+#include "hid-ids.h"
 
 static bool emulate_3button = 1;
 module_param(emulate_3button, bool, 0644);
@@ -43,15 +37,32 @@ static bool report_undeciphered = 0;
 module_param(report_undeciphered, bool, 0644);
 MODULE_PARM_DESC(report_undeciphered, "Report undeciphered multi-touch state field using a MSC_RAW event");
 
+#define TOUCH_REPORT_ID   0x29
+/* These definitions are not precise, but they're close enough.  (Bits
+ * 0x03 seem to indicate the aspect ratio of the touch, bits 0x70 seem
+ * to be some kind of bit mask -- 0x20 may be a near-field reading,
+ * and 0x40 is actual contact, and 0x10 may be a start/stop or change
+ * indication.)
+ */
+#define TOUCH_STATE_MASK  0xf0
+#define TOUCH_STATE_NONE  0x00
+#define TOUCH_STATE_START 0x30
+#define TOUCH_STATE_DRAG  0x40
+
 /**
  * struct magicmouse_sc - Tracks Magic Mouse-specific data.
+ * @input: Input device through which we report events.
+ * @quirks: Currently unused.
  * @last_timestamp: Timestamp from most recent (18-bit) touch report
  *     (units of milliseconds over short windows, but seems to
  *     increase faster when there are no touches).
  * @delta_time: 18-bit difference between the two most recent touch
  *     reports from the mouse.
  * @ntouches: Number of touches in most recent touch report.
+ * @scroll_accel: Number of consecutive scroll motions.
+ * @scroll_jiffies: Time of last scroll motion.
  * @touches: Most recent data for a touch, indexed by tracking ID.
+ * @tracking_ids: Mapping of current touch input data to @touches.
  */
 struct magicmouse_sc {
 	struct input_dev *input;
@@ -95,8 +106,12 @@ static int magicmouse_firm_touch(struct magicmouse_sc *msc)
 	return touch;
 }
 
-static void magicmouse_emit_buttons(struct magicmouse_sc *msc, u8 state)
+static void magicmouse_emit_buttons(struct magicmouse_sc *msc, int state)
 {
+        int last_state = test_bit(BTN_LEFT, msc->input->key) << 0 |
+                test_bit(BTN_RIGHT, msc->input->key) << 1 |
+                test_bit(BTN_MIDDLE, msc->input->key) << 2;
+
 	if (emulate_3button) {
 		int id;
 
@@ -104,14 +119,10 @@ static void magicmouse_emit_buttons(struct magicmouse_sc *msc, u8 state)
 		 * down.  Otherwise, if there's exactly one firm
 		 * touch, use that to override the mouse's guess.
 		 */
-		if (!state) {
+		if (state == 0) {
 			/* The button was released. */
-		} else if (test_bit(BTN_LEFT, msc->input->key) ||
-			   test_bit(BTN_RIGHT, msc->input->key) ||
-			   test_bit(BTN_MIDDLE, msc->input->key)) {
-			state = test_bit(BTN_LEFT, msc->input->key) |
-				test_bit(BTN_RIGHT, msc->input->key) << 1 |
-				test_bit(BTN_MIDDLE, msc->input->key) << 2;
+		} else if (last_state != 0) {
+			state = last_state;
 		} else if ((id = magicmouse_firm_touch(msc)) >= 0) {
 			int x = msc->touches[id].x;
 			if (x < middle_button_start)
@@ -120,7 +131,7 @@ static void magicmouse_emit_buttons(struct magicmouse_sc *msc, u8 state)
 				state = 2;
 			else
 				state = 4;
-		}
+		} /* else: we keep the mouse's guess */
 
 		input_report_key(msc->input, BTN_MIDDLE, state & 4);
 	}
@@ -128,60 +139,66 @@ static void magicmouse_emit_buttons(struct magicmouse_sc *msc, u8 state)
 	input_report_key(msc->input, BTN_LEFT, state & 1);
 	input_report_key(msc->input, BTN_RIGHT, state & 2);
 
-	if (state != 0) {
+	if (state != last_state)
 		msc->scroll_accel = 0;
-	}
 }
 
 static void magicmouse_emit_touch(struct magicmouse_sc *msc, int raw_id, u8 *tdata)
 {
 	struct input_dev *input = msc->input;
 	__s32 x_y = tdata[0] << 8 | tdata[1] << 16 | tdata[2] << 24;
-	__u16 misc = tdata[5] | tdata[6] << 8;
+	int misc = tdata[5] | tdata[6] << 8;
 	int id = (misc >> 6) & 15;
 	int x = x_y << 12 >> 20;
 	int y = -(x_y >> 20);
 
-	/* Store tracking ID sequence. */
+	/* Store tracking ID and other fields. */
 	msc->tracking_ids[raw_id] = id;
-
-	/* If requested, emulate a scroll wheel by detecting small
-	 * vertical touch motions near the middle-button area.
-	 */
-	if (emulate_scroll_wheel && y < 0 &&
-	    middle_button_start < x && x < middle_button_stop) {
-		unsigned long now = jiffies;
-		int step = msc->touches[id].scroll_y - y;
-
-		/* Reset acceleration after half a second. */
-		if (time_after(now, msc->scroll_jiffies + HZ / 2)) {
-			msc->scroll_accel = 0;
-		}
-
-		/* Calculate and apply the scroll motion. */
-		step = step >> (7 - msc->scroll_accel);
-		if ((tdata[7] & 0xf0) != 0x40) {
-			msc->touches[id].scroll_y = y;
-			if (++msc->scroll_accel > 7)
-                                msc->scroll_accel = 0;
-		} else if (step != 0) {
-			msc->touches[id].scroll_y = y;
-			msc->scroll_jiffies = now;
-			input_report_rel(input, REL_WHEEL, step);
-		}
-	}
-
-	/* Stash the coordinates that we might use later. */
 	msc->touches[id].x = x;
 	msc->touches[id].y = y;
 	msc->touches[id].size = misc & 63;
 
+	/* If requested, emulate a scroll wheel by detecting small
+	 * vertical touch motions along the middle of the mouse.
+	 */
+	if (emulate_scroll_wheel &&
+	    middle_button_start < x && x < middle_button_stop) {
+		static const int accel_profile[] = {
+			256, 228, 192, 160, 128, 96, 64, 32,
+		};
+		unsigned long now = jiffies;
+		int step = msc->touches[id].scroll_y - y;
+
+		/* Reset acceleration after half a second. */
+		if (time_after(now, msc->scroll_jiffies + HZ / 2))
+			msc->scroll_accel = 0;
+
+		/* Calculate and apply the scroll motion. */
+		switch (tdata[7] & TOUCH_STATE_MASK) {
+		case TOUCH_STATE_START:
+			msc->touches[id].scroll_y = y;
+                        msc->scroll_accel = min_t(int, msc->scroll_accel + 1,
+						ARRAY_SIZE(accel_profile) - 1);
+			break;
+		case TOUCH_STATE_DRAG:
+			step = step / accel_profile[msc->scroll_accel];
+			if (step != 0) {
+				msc->touches[id].scroll_y = y;
+				msc->scroll_jiffies = now;
+				input_report_rel(input, REL_WHEEL, step);
+			}
+			break;
+		}
+	}
+
 	/* Generate the input events for this touch. */
 	if (report_touches) {
+                int orientation = (misc >> 10) - 32;
+
 		input_report_abs(input, ABS_MT_TRACKING_ID, id);
 		input_report_abs(input, ABS_MT_TOUCH_MAJOR, tdata[3]);
 		input_report_abs(input, ABS_MT_TOUCH_MINOR, tdata[4]);
-		input_report_abs(input, ABS_MT_ORIENTATION, (int)(misc >> 10) - 32);
+		input_report_abs(input, ABS_MT_ORIENTATION, orientation);
 		input_report_abs(input, ABS_MT_POSITION_X, x);
 		input_report_abs(input, ABS_MT_POSITION_Y, y);
 
@@ -198,20 +215,17 @@ static int magicmouse_raw_event(struct hid_device *hdev,
 {
 	struct magicmouse_sc *msc = hid_get_drvdata(hdev);
 	struct input_dev *input = msc->input;
-	short x, y;
-	int ts;
-	int ii;
-	u8 clicks;
+	int x, y, ts, ii, clicks;
 
 	switch (data[0]) {
 	case 0x10:
 		if (size != 6)
 			return 0;
-		x = (short)(data[2] | data[3] << 8);
-		y = (short)(data[4] | data[5] << 8);
+		x = (__s16)(data[2] | data[3] << 8);
+		y = (__s16)(data[4] | data[5] << 8);
 		clicks = data[1];
 		break;
-	case 0x29:
+	case TOUCH_REPORT_ID:
 		/* Expect six bytes of prefix, and N*8 bytes of touch data. */
 		if (size < 6 || ((size - 6) % 8) != 0)
 			return 0;
@@ -367,7 +381,7 @@ static int magicmouse_probe(struct hid_device *hdev,
 		goto err_free;
 	}
 
-	report = hid_register_report(hdev, HID_INPUT_REPORT, 0x29);
+	report = hid_register_report(hdev, HID_INPUT_REPORT, TOUCH_REPORT_ID);
 	if (!report) {
 		dev_err(&hdev->dev, "unable to register touch report\n");
 		ret = -ENOMEM;
@@ -375,14 +389,18 @@ static int magicmouse_probe(struct hid_device *hdev,
 	}
 	report->size = 6;
 
-	ret = hdev->ll_driver->hid_set_report(hdev, HID_FEATURE_REPORT,
-			feature_1, sizeof(feature_1));
-	if (!ret) {
-		ret = hdev->ll_driver->hid_set_report(hdev, HID_FEATURE_REPORT,
-				feature_2, sizeof(feature_2));
+	ret = hdev->hid_output_raw_report(hdev, feature_1, sizeof(feature_1),
+			HID_FEATURE_REPORT);
+	if (ret != sizeof(feature_1)) {
+		dev_err(&hdev->dev, "unable to request touch data (1:%d)\n",
+				ret);
+		goto err_free;
 	}
-	if (ret) {
-		dev_err(&hdev->dev, "unable to request touch data\n");
+	ret = hdev->hid_output_raw_report(hdev, feature_2,
+			sizeof(feature_2), HID_FEATURE_REPORT);
+	if (ret != sizeof(feature_2)) {
+		dev_err(&hdev->dev, "unable to request touch data (2:%d)\n",
+				ret);
 		goto err_free;
 	}
 

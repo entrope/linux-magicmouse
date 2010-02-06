@@ -1,0 +1,107 @@
+From 9f7b5fceaeac9d131bb0182408bdff872d03fade Mon Sep 17 00:00:00 2001
+From: Jiri Kosina <jkosina@suse.cz>
+Date: Fri, 29 Jan 2010 15:03:36 +0100
+Subject: [RFC PATCH 2/4] HID: make raw reports possible for both feature and output reports
+
+In commit 2da31939a42 ("Bluetooth: Implement raw output support for HIDP
+layer"), support for Bluetooth hid_output_raw_report was added, but it
+pushes the data to the intr socket instead of the ctrl one. This has been
+fixed by 6bf8268f9a91f1 ("Bluetooth: Use the control channel for raw HID reports")
+
+Still, it is necessary to distinguish whether the report in question should be
+either FEATURE or OUTPUT. For this, we have to extend the generic HID API,
+so that hid_output_raw_report() callback provides means to specify this
+value so that it can be passed down to lower level hardware drivers (currently
+Bluetooth and USB).
+
+Based on original patch by Bastien Nocera <hadess@hadess.net>
+Acked-by: Marcel Holtmann <marcel@holtmann.org>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+---
+ drivers/hid/hidraw.c          |    2 +-
+ drivers/hid/usbhid/hid-core.c |    5 +++--
+ include/linux/hid.h           |    2 +-
+ net/bluetooth/hidp/core.c     |   17 ++++++++++++++---
+ 4 files changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/hid/hidraw.c b/drivers/hid/hidraw.c
+index cdd1369..d044767 100644
+--- a/drivers/hid/hidraw.c
++++ b/drivers/hid/hidraw.c
+@@ -134,7 +134,7 @@ static ssize_t hidraw_write(struct file *file, const char __user *buffer, size_t
+ 		goto out;
+ 	}
+ 
+-	ret = dev->hid_output_raw_report(dev, buf, count);
++	ret = dev->hid_output_raw_report(dev, buf, count, HID_OUTPUT_REPORT);
+ out:
+ 	kfree(buf);
+ 	return ret;
+diff --git a/drivers/hid/usbhid/hid-core.c b/drivers/hid/usbhid/hid-core.c
+index e2997a8..caa16c0 100644
+--- a/drivers/hid/usbhid/hid-core.c
++++ b/drivers/hid/usbhid/hid-core.c
+@@ -774,7 +774,8 @@ static int hid_alloc_buffers(struct usb_device *dev, struct hid_device *hid)
+ 	return 0;
+ }
+ 
+-static int usbhid_output_raw_report(struct hid_device *hid, __u8 *buf, size_t count)
++static int usbhid_output_raw_report(struct hid_device *hid, __u8 *buf, size_t count,
++		unsigned char report_type)
+ {
+ 	struct usbhid_device *usbhid = hid->driver_data;
+ 	struct usb_device *dev = hid_to_usb_dev(hid);
+@@ -785,7 +786,7 @@ static int usbhid_output_raw_report(struct hid_device *hid, __u8 *buf, size_t co
+ 	ret = usb_control_msg(dev, usb_sndctrlpipe(dev, 0),
+ 		HID_REQ_SET_REPORT,
+ 		USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
+-		((HID_OUTPUT_REPORT + 1) << 8) | *buf,
++		((report_type + 1) << 8) | *buf,
+ 		interface->desc.bInterfaceNumber, buf + 1, count - 1,
+ 		USB_CTRL_SET_TIMEOUT);
+ 
+diff --git a/include/linux/hid.h b/include/linux/hid.h
+index 8709365..3661a62 100644
+--- a/include/linux/hid.h
++++ b/include/linux/hid.h
+@@ -501,7 +501,7 @@ struct hid_device {							/* device report descriptor */
+ 	void (*hiddev_report_event) (struct hid_device *, struct hid_report *);
+ 
+ 	/* handler for raw output data, used by hidraw */
+-	int (*hid_output_raw_report) (struct hid_device *, __u8 *, size_t);
++	int (*hid_output_raw_report) (struct hid_device *, __u8 *, size_t, unsigned char);
+ 
+ 	/* debugging support via debugfs */
+ 	unsigned short debug;
+diff --git a/net/bluetooth/hidp/core.c b/net/bluetooth/hidp/core.c
+index fc6ec1e..280529a 100644
+--- a/net/bluetooth/hidp/core.c
++++ b/net/bluetooth/hidp/core.c
+@@ -313,10 +313,21 @@ static int hidp_send_report(struct hidp_session *session, struct hid_report *rep
+ 	return hidp_queue_report(session, buf, rsize);
+ }
+ 
+-static int hidp_output_raw_report(struct hid_device *hid, unsigned char *data, size_t count)
++static int hidp_output_raw_report(struct hid_device *hid, unsigned char *data, size_t count,
++		unsigned char report_type)
+ {
+-	if (hidp_send_ctrl_message(hid->driver_data,
+-			HIDP_TRANS_SET_REPORT | HIDP_DATA_RTYPE_FEATURE,
++	switch (report_type) {
++	case HID_FEATURE_REPORT:
++		report_type = HIDP_TRANS_SET_REPORT | HIDP_DATA_RTYPE_FEATURE;
++		break;
++	case HID_OUTPUT_REPORT:
++		report_type = HIDP_TRANS_DATA | HIDP_DATA_RTYPE_OUPUT;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	if (hidp_send_ctrl_message(hid->driver_data, report_type,
+ 			data, count))
+ 		return -ENOMEM;
+ 	return count;
+-- 
+1.6.5.6
+

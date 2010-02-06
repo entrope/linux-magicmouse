@@ -1,7 +1,7 @@
-From f44bf533c94798f638df59825603a42858a04e18 Mon Sep 17 00:00:00 2001
+From 6fd44770774cd672df6f10e4767f4c17bf90bc30 Mon Sep 17 00:00:00 2001
 From: Michael Poole <mdpoole@troilus.org>
 Date: Sun, 24 Jan 2010 22:32:29 -0500
-Subject: [RFC PATCH 1/3] Export hid_register_report().
+Subject: [RFC PATCH 3/4] Export hid_register_report().
 
 The Apple Magic Mouse (and probably other devices) publish reports that
 are not called out in their HID report descriptors -- they only send them
@@ -15,7 +15,7 @@ Signed-off-by: Michael Poole <mdpoole@troilus.org>
  2 files changed, 3 insertions(+), 1 deletions(-)
 
 diff --git a/drivers/hid/hid-core.c b/drivers/hid/hid-core.c
-index b8ff36c..d71a208 100644
+index eabe5f8..e39055b 100644
 --- a/drivers/hid/hid-core.c
 +++ b/drivers/hid/hid-core.c
 @@ -51,7 +51,7 @@ EXPORT_SYMBOL_GPL(hid_debug);
@@ -36,7 +36,7 @@ index b8ff36c..d71a208 100644
  /*
   * Register a new field for this report.
 diff --git a/include/linux/hid.h b/include/linux/hid.h
-index b978c1e..c22d8aa 100644
+index 3661a62..456838c 100644
 --- a/include/linux/hid.h
 +++ b/include/linux/hid.h
 @@ -690,6 +690,7 @@ int hid_input_report(struct hid_device *, int type, u8 *, int, int);
