@@ -1,0 +1,35 @@
+From 83331cd3136fbca8706947d7002b74ea1d54770a Mon Sep 17 00:00:00 2001
+From: Jiri Kosina <jkosina@suse.cz>
+Date: Wed, 10 Feb 2010 14:59:03 +0100
+Subject: [PATCH 8/9] HID: fix up Kconfig entry for MagicMouse
+
+Make Apple MagicMouse Kconfig entry consistent with other dirvers.
+Also expand the tristate text a little bit more, so that it doesn't
+clash with already existing HID_APPLE.
+
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+---
+ drivers/hid/Kconfig |    5 ++---
+ 1 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/hid/Kconfig b/drivers/hid/Kconfig
+index ba14ec8..0e668cc 100644
+--- a/drivers/hid/Kconfig
++++ b/drivers/hid/Kconfig
+@@ -184,11 +184,10 @@ config LOGIRUMBLEPAD2_FF
+ 	  Rumblepad 2 devices.
+ 
+ config HID_MAGICMOUSE
+-	tristate "Apple" if EMBEDDED
++	tristate "Apple MagicMouse multi-touch support"
+ 	depends on BT_HIDP
+-	default !EMBEDDED
+ 	---help---
+-	Support for the Apple Magic Mouse.
++	Support for the Apple Magic Mouse multi-touch.
+ 
+ 	Say Y here if you want support for the multi-touch features of the
+ 	Apple Wireless "Magic" Mouse.
+-- 
+1.6.5.6
+

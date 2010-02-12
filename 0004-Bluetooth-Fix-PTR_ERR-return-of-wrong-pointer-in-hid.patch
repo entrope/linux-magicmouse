@@ -1,0 +1,29 @@
+From 332de31c58dd33df3267f4c86eb9c75492afce78 Mon Sep 17 00:00:00 2001
+From: Roel Kluin <roel.kluin@gmail.com>
+Date: Mon, 7 Dec 2009 14:23:21 +0100
+Subject: [PATCH 4/9] Bluetooth: Fix PTR_ERR return of wrong pointer in hidp_setup_hid()
+
+Return the PTR_ERR of the correct pointer.
+
+Signed-off-by: Roel Kluin <roel.kluin@gmail.com>
+Signed-off-by: Marcel Holtmann <marcel@holtmann.org>
+---
+ net/bluetooth/hidp/core.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/net/bluetooth/hidp/core.c b/net/bluetooth/hidp/core.c
+index eda36c5..37ba153 100644
+--- a/net/bluetooth/hidp/core.c
++++ b/net/bluetooth/hidp/core.c
+@@ -783,7 +783,7 @@ static int hidp_setup_hid(struct hidp_session *session,
+ 
+ 	hid = hid_allocate_device();
+ 	if (IS_ERR(hid))
+-		return PTR_ERR(session->hid);
++		return PTR_ERR(hid);
+ 
+ 	session->hid = hid;
+ 	session->req = req;
+-- 
+1.6.5.6
+

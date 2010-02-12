@@ -1,26 +1,27 @@
-From 97218125e6a40f7667cbec08943259bd963e5e75 Mon Sep 17 00:00:00 2001
+From f41e21bdc9864e397ae237e849d3bac43c37b5fe Mon Sep 17 00:00:00 2001
 From: Michael Poole <mdpoole@troilus.org>
-Date: Fri, 5 Feb 2010 12:21:38 -0500
-Subject: [RFC PATCH 1/4] Bluetooth: Keep a copy of each HID device's report descriptor.
+Date: Fri, 5 Feb 2010 12:23:43 -0500
+Subject: [PATCH 5/9] Bluetooth: Keep a copy of each HID device's report descriptor
 
 The report descriptor is read by user space (via the Service
 Discovery Protocol), so it is only available during the ioctl
-to connect.  However, the probe function that needs the
+to connect. However, the HID probe function that needs the
 descriptor might not be called until a specific module is
-loaded.  Keep a copy of the descriptor so it is available for
+loaded. Keep a copy of the descriptor so it is available for
 later use.
 
 Signed-off-by: Michael Poole <mdpoole@troilus.org>
+Signed-off-by: Marcel Holtmann <marcel@holtmann.org>
 ---
  net/bluetooth/hidp/core.c |   49 ++++++++++++++++++++++-----------------------
  net/bluetooth/hidp/hidp.h |    4 ++-
  2 files changed, 27 insertions(+), 26 deletions(-)
 
 diff --git a/net/bluetooth/hidp/core.c b/net/bluetooth/hidp/core.c
-index 6cf526d..fc6ec1e 100644
+index 37ba153..280529a 100644
 --- a/net/bluetooth/hidp/core.c
 +++ b/net/bluetooth/hidp/core.c
-@@ -703,29 +703,9 @@ static void hidp_close(struct hid_device *hid)
+@@ -714,29 +714,9 @@ static void hidp_close(struct hid_device *hid)
  static int hidp_parse(struct hid_device *hid)
  {
  	struct hidp_session *session = hid->driver_data;
@@ -52,7 +53,7 @@ index 6cf526d..fc6ec1e 100644
  }
  
  static int hidp_start(struct hid_device *hid)
-@@ -770,12 +750,24 @@ static int hidp_setup_hid(struct hidp_session *session,
+@@ -781,12 +761,24 @@ static int hidp_setup_hid(struct hidp_session *session,
  	bdaddr_t src, dst;
  	int err;
  
@@ -80,7 +81,7 @@ index 6cf526d..fc6ec1e 100644
  	hid->driver_data = session;
  
  	baswap(&src, &bt_sk(session->ctrl_sock->sk)->src);
-@@ -806,6 +798,10 @@ failed:
+@@ -817,6 +809,10 @@ failed:
  	hid_destroy_device(hid);
  	session->hid = NULL;
  
@@ -91,7 +92,7 @@ index 6cf526d..fc6ec1e 100644
  	return err;
  }
  
-@@ -900,6 +896,9 @@ unlink:
+@@ -911,6 +907,9 @@ unlink:
  		session->hid = NULL;
  	}
  

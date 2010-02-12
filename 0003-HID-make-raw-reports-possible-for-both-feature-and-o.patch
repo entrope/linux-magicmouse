@@ -1,7 +1,7 @@
-From 9f7b5fceaeac9d131bb0182408bdff872d03fade Mon Sep 17 00:00:00 2001
+From 6e36cda6a74b861ad9ffa3811224e88c14b8bfe5 Mon Sep 17 00:00:00 2001
 From: Jiri Kosina <jkosina@suse.cz>
 Date: Fri, 29 Jan 2010 15:03:36 +0100
-Subject: [RFC PATCH 2/4] HID: make raw reports possible for both feature and output reports
+Subject: [PATCH 3/9] HID: make raw reports possible for both feature and output reports
 
 In commit 2da31939a42 ("Bluetooth: Implement raw output support for HIDP
 layer"), support for Bluetooth hid_output_raw_report was added, but it
@@ -38,10 +38,10 @@ index cdd1369..d044767 100644
  	kfree(buf);
  	return ret;
 diff --git a/drivers/hid/usbhid/hid-core.c b/drivers/hid/usbhid/hid-core.c
-index e2997a8..caa16c0 100644
+index 5d901f6..df54a99 100644
 --- a/drivers/hid/usbhid/hid-core.c
 +++ b/drivers/hid/usbhid/hid-core.c
-@@ -774,7 +774,8 @@ static int hid_alloc_buffers(struct usb_device *dev, struct hid_device *hid)
+@@ -776,7 +776,8 @@ static int hid_alloc_buffers(struct usb_device *dev, struct hid_device *hid)
  	return 0;
  }
  
@@ -51,7 +51,7 @@ index e2997a8..caa16c0 100644
  {
  	struct usbhid_device *usbhid = hid->driver_data;
  	struct usb_device *dev = hid_to_usb_dev(hid);
-@@ -785,7 +786,7 @@ static int usbhid_output_raw_report(struct hid_device *hid, __u8 *buf, size_t co
+@@ -787,7 +788,7 @@ static int usbhid_output_raw_report(struct hid_device *hid, __u8 *buf, size_t co
  	ret = usb_control_msg(dev, usb_sndctrlpipe(dev, 0),
  		HID_REQ_SET_REPORT,
  		USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
@@ -74,7 +74,7 @@ index 8709365..3661a62 100644
  	/* debugging support via debugfs */
  	unsigned short debug;
 diff --git a/net/bluetooth/hidp/core.c b/net/bluetooth/hidp/core.c
-index fc6ec1e..280529a 100644
+index 40879ed..eda36c5 100644
 --- a/net/bluetooth/hidp/core.c
 +++ b/net/bluetooth/hidp/core.c
 @@ -313,10 +313,21 @@ static int hidp_send_report(struct hidp_session *session, struct hid_report *rep

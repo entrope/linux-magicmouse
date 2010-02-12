@@ -3,23 +3,20 @@ INSTALLING THE MAGICMOUSE DRIVER
 
 The Magic Mouse driver for linux is a module named hid-magicmouse.
 
-Released kernels (at least up through 2.6.33-rc4) do not have all the
-hooks that a driver needs to talk to the Magic Mouse.  These are
-provided in three patch files, so you must apply them and rebuild the
-kernel before you can load hid-magicmouse.  To apply them, change to
-your linux-2.6 directory, and run:
-  patch -p1 < .../path/to/0001-Bluetooth-Keep-a-copy-of-each-HID-device-s-report-de.patch
-  patch -p1 < .../path/to/0002-HID-make-raw-reports-possible-for-both-feature-and-o.patch
-  patch -p1 < .../path/to/0003-Export-hid_register_report.patch
+Older kernels do not have all the hooks that a driver needs to talk to
+the Magic Mouse.  These are provided in this directory; you must apply
+them and rebuild the kernel before you can load hid-magicmouse.  To
+apply the patch series, change to your linux-2.6 directory, and run
+either:
+  git apply *.patch
+OR (in a Bourne shell, such as /bin/sh):
+  for PATCH in *.patch ; do patch -p1 < $PATCH ; done
 
-As of February 5th, the first two are in the corresponding subsystem
-maintainers' trees for integration into the mainstream kernel.  If you
-have new enough kernel code, you may not need to apply those patches.
-
-At this point you can either apply
-0004-Add-a-device-driver-for-the-Apple-Magic-Mouse.patch (in the same
-fashion) and build hid-magicmouse in the kernel, or you can build and
-install the kernel and then build hid-magicmouse from this directory.
+This series were cherry-picked from the HID and Bluetooth trees onto
+v2.6.32.8.  They should be filtering from the HID and Bluetooth trees
+into the mainstream kernel between v2.6.33 and v2.6.34.  This
+directory's hid-magicmouse.c should match the final result of applying
+the patches in sequence.
 
 You will obviously need to reboot into the new kernel before the
 module can be loaded, but at that point user-space should see it as a

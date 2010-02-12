@@ -1,0 +1,48 @@
+From ea74d673e78dff66051b28f70f786d601fb9f939 Mon Sep 17 00:00:00 2001
+From: Jiri Kosina <jkosina@suse.cz>
+Date: Thu, 26 Nov 2009 16:20:56 +0100
+Subject: [PATCH 1/9] Bluetooth: Implement raw output support for HIDP layer
+
+Implement raw output callback which is used by hidraw to send raw data to
+the underlying device.
+
+Without this patch, the userspace hidraw-based applications can't send
+output reports to HID Bluetooth devices.
+
+Reported-and-tested-by: Brian Gunn <bgunn@solekai.com>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+Signed-off-by: Marcel Holtmann <marcel@holtmann.org>
+---
+ net/bluetooth/hidp/core.c |    9 +++++++++
+ 1 files changed, 9 insertions(+), 0 deletions(-)
+
+diff --git a/net/bluetooth/hidp/core.c b/net/bluetooth/hidp/core.c
+index 49d8495..5697500 100644
+--- a/net/bluetooth/hidp/core.c
++++ b/net/bluetooth/hidp/core.c
+@@ -280,6 +280,13 @@ static int hidp_send_report(struct hidp_session *session, struct hid_report *rep
+ 	return hidp_queue_report(session, buf, rsize);
+ }
+ 
++static int hidp_output_raw_report(struct hid_device *hid, unsigned char *data, size_t count)
++{
++	if (hidp_queue_report(hid->driver_data, data, count))
++		return -ENOMEM;
++	return count;
++}
++
+ static void hidp_idle_timeout(unsigned long arg)
+ {
+ 	struct hidp_session *session = (struct hidp_session *) arg;
+@@ -785,6 +792,8 @@ static int hidp_setup_hid(struct hidp_session *session,
+ 	hid->dev.parent = hidp_get_device(session);
+ 	hid->ll_driver = &hidp_hid_driver;
+ 
++	hid->hid_output_raw_report = hidp_output_raw_report;
++
+ 	err = hid_add_device(hid);
+ 	if (err < 0)
+ 		goto failed;
+-- 
+1.6.5.6
+

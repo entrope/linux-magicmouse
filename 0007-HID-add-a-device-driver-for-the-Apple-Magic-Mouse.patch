@@ -1,9 +1,24 @@
-From da3e2b0330fccd584ad79495853e638e9652155b Mon Sep 17 00:00:00 2001
+From e7134601513c68779425a32e52706ac3f38b0dec Mon Sep 17 00:00:00 2001
 From: Michael Poole <mdpoole@troilus.org>
 Date: Sat, 6 Feb 2010 12:24:36 -0500
-Subject: [RFC PATCH 4/4] Add a device driver for the Apple Magic Mouse.
+Subject: [PATCH 7/9] HID: add a device driver for the Apple Magic Mouse.
+
+The Magic Mouse requires that a driver send an unlock Report(Feature) command,
+similar to the Wacom wireless tablet and Sixaxis controller quirks.  This turns
+on an Input Report that isn't published in the input Report descriptor that
+contains touch data (and usually overrides the normal motion and click Report).
+
+Because the mouse has only one switch and no scroll wheel, the driver
+(under control of parameters) emulates a middle button and scroll wheel.
+User space could also ignore and/or re-synthesize those events based on
+the reported events.
+
+Some user-space tools to talk to the mouse directly (that is, when it is not
+associated with the host's HIDP stack) are at
+http://github.com/entrope/linux-magicmouse
 
 Signed-off-by: Michael Poole <mdpoole@troilus.org>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
 ---
  drivers/hid/Kconfig          |   10 +
  drivers/hid/Makefile         |    1 +
@@ -47,10 +62,10 @@ index 0de2dff..45d81e9 100644
  obj-$(CONFIG_HID_MONTEREY)	+= hid-monterey.o
  obj-$(CONFIG_HID_NTRIG)		+= hid-ntrig.o
 diff --git a/drivers/hid/hid-core.c b/drivers/hid/hid-core.c
-index e39055b..f23ca76 100644
+index 515f40f..6bd4e57 100644
 --- a/drivers/hid/hid-core.c
 +++ b/drivers/hid/hid-core.c
-@@ -1254,6 +1254,7 @@ static const struct hid_device_id hid_blacklist[] = {
+@@ -1256,6 +1256,7 @@ static const struct hid_device_id hid_blacklist[] = {
  	{ HID_USB_DEVICE(USB_VENDOR_ID_APPLE, USB_DEVICE_ID_APPLE_ATV_IRCONTROL) },
  	{ HID_USB_DEVICE(USB_VENDOR_ID_APPLE, USB_DEVICE_ID_APPLE_IRCONTROL4) },
  	{ HID_USB_DEVICE(USB_VENDOR_ID_APPLE, USB_DEVICE_ID_APPLE_MIGHTYMOUSE) },
@@ -59,7 +74,7 @@ index e39055b..f23ca76 100644
  	{ HID_USB_DEVICE(USB_VENDOR_ID_APPLE, USB_DEVICE_ID_APPLE_FOUNTAIN_ISO) },
  	{ HID_USB_DEVICE(USB_VENDOR_ID_APPLE, USB_DEVICE_ID_APPLE_GEYSER_ANSI) },
 diff --git a/drivers/hid/hid-ids.h b/drivers/hid/hid-ids.h
-index 010368e..11e5218 100644
+index e380e7b..5d91fa4 100644
 --- a/drivers/hid/hid-ids.h
 +++ b/drivers/hid/hid-ids.h
 @@ -56,6 +56,7 @@

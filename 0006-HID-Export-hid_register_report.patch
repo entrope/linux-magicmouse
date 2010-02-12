@@ -1,24 +1,25 @@
-From 6fd44770774cd672df6f10e4767f4c17bf90bc30 Mon Sep 17 00:00:00 2001
+From a79d10abecb411a73e012c7b31a0a42abcdc8413 Mon Sep 17 00:00:00 2001
 From: Michael Poole <mdpoole@troilus.org>
 Date: Sun, 24 Jan 2010 22:32:29 -0500
-Subject: [RFC PATCH 3/4] Export hid_register_report().
+Subject: [PATCH 6/9] HID: Export hid_register_report
 
-The Apple Magic Mouse (and probably other devices) publish reports that
-are not called out in their HID report descriptors -- they only send them
-when enabled through other writes to the device.  This allows a driver to
-handle these unlisted reports.
+The Apple Magic Mouse (and probably other devices) publish reports that are not
+called out in their HID report descriptors -- they only send them when enabled
+through other writes to the device.  This allows a driver to handle these
+unlisted reports.
 
 Signed-off-by: Michael Poole <mdpoole@troilus.org>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
 ---
  drivers/hid/hid-core.c |    3 ++-
  include/linux/hid.h    |    1 +
  2 files changed, 3 insertions(+), 1 deletions(-)
 
 diff --git a/drivers/hid/hid-core.c b/drivers/hid/hid-core.c
-index eabe5f8..e39055b 100644
+index 9678354..515f40f 100644
 --- a/drivers/hid/hid-core.c
 +++ b/drivers/hid/hid-core.c
-@@ -51,7 +51,7 @@ EXPORT_SYMBOL_GPL(hid_debug);
+@@ -53,7 +53,7 @@ EXPORT_SYMBOL_GPL(hid_debug);
   * Register a new report for a device.
   */
  
@@ -27,7 +28,7 @@ index eabe5f8..e39055b 100644
  {
  	struct hid_report_enum *report_enum = device->report_enum + type;
  	struct hid_report *report;
-@@ -75,6 +75,7 @@ static struct hid_report *hid_register_report(struct hid_device *device, unsigne
+@@ -77,6 +77,7 @@ static struct hid_report *hid_register_report(struct hid_device *device, unsigne
  
  	return report;
  }
